@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AppState } from '@/store/types'
 import {
+  getLocalAgentPreflightContext,
   getLocalPreflightContext,
   getWslDistroFromPath,
   localPreflightContextKey
@@ -85,5 +86,20 @@ describe('local preflight context', () => {
     expect(getLocalPreflightContext(state)).toBeUndefined()
     expect(getLocalPreflightContext(state)).toBeUndefined()
     expect(localPreflightContextKey(getLocalPreflightContext(state))).toBe('host')
+  })
+
+  it('uses the selected WSL distro for local agent checks when WSL is the default shell', () => {
+    const state = {
+      ...makeState({ repoPath: 'C:\\Users\\alice\\repo' }),
+      settings: {
+        terminalWindowsShell: 'wsl.exe',
+        terminalWindowsWslDistro: 'Debian'
+      }
+    } as AppState
+
+    const context = getLocalAgentPreflightContext(state)
+
+    expect(context).toEqual({ wslDistro: 'Debian' })
+    expect(localPreflightContextKey(context)).toBe('wsl:Debian')
   })
 })

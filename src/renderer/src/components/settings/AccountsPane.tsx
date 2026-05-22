@@ -14,6 +14,8 @@ import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Separator } from '../ui/separator'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useAppStore } from '../../store'
 import { ClaudeIcon, GeminiIcon, OpenAIIcon, OpenCodeGoIcon } from '../status-bar/icons'
@@ -28,7 +30,6 @@ import {
 import { SearchableSetting } from './SearchableSetting'
 import { matchesSettingsSearch } from './settings-search'
 import { markLiveCodexSessionsForRestart } from '@/lib/codex-session-restart'
-import { getLocalPreflightContext } from '@/lib/local-preflight-context'
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,9 @@ export { ACCOUNTS_PANE_SEARCH_ENTRIES }
 type AccountsPaneProps = {
   settings: GlobalSettings
   updateSettings: (updates: Partial<GlobalSettings>) => void
+  wslAvailable?: boolean
+  wslDistros?: string[]
+  wslCapabilitiesLoading?: boolean
 }
 
 function getCodexAccountLabel(
@@ -63,6 +67,15 @@ function getClaudeAccountLabel(
     return 'System default'
   }
   return state.accounts.find((account) => account.id === accountId)?.email ?? 'Claude account'
+}
+
+function getCodexAccountRuntimeLabel(
+  account: CodexRateLimitAccountsState['accounts'][number]
+): string {
+  if (account.managedHomeRuntime === 'wsl') {
+    return account.wslDistro ? `WSL ${account.wslDistro}` : 'WSL'
+  }
+  return 'Windows'
 }
 
 function getCodexAccountErrorDescription(error: unknown): string {
@@ -109,11 +122,20 @@ function getClaudeAccountErrorDescription(error: unknown): string {
   )
 }
 
-export function AccountsPane({ settings, updateSettings }: AccountsPaneProps): React.JSX.Element {
+type CodexAddTarget = 'host' | 'wsl'
+
+export function AccountsPane({
+  settings,
+  updateSettings,
+  wslAvailable = false,
+  wslDistros = [],
+  wslCapabilitiesLoading = false
+}: AccountsPaneProps): React.JSX.Element {
   const searchQuery = useAppStore((s) => s.settingsSearchQuery)
   const fetchSettings = useAppStore((s) => s.fetchSettings)
-  const localPreflightContext = useAppStore(getLocalPreflightContext)
-  const activeWslDistro = localPreflightContext?.wslDistro?.trim() || null
+  const [codexAddTarget, setCodexAddTarget] = useState<CodexAddTarget>('host')
+  const [codexAddWslDistro, setCodexAddWslDistro] = useState<string | null>(null)
+  const selectedWslDistro = codexAddWslDistro ?? wslDistros[0] ?? null
 
   const [codexAccounts, setCodexAccounts] = useState<CodexRateLimitAccountsState>({
     accounts: [],
@@ -131,6 +153,12 @@ export function AccountsPane({ settings, updateSettings }: AccountsPaneProps): R
   >('idle')
   const [removeAccountId, setRemoveAccountId] = useState<string | null>(null)
   const [removeClaudeAccountId, setRemoveClaudeAccountId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!wslCapabilitiesLoading && !wslAvailable && codexAddTarget === 'wsl') {
+      setCodexAddTarget('host')
+    }
+  }, [codexAddTarget, wslAvailable, wslCapabilitiesLoading])
 
   useEffect(() => {
     let stale = false
@@ -425,12 +453,6 @@ export function AccountsPane({ settings, updateSettings }: AccountsPaneProps): R
             Optional. Orca can use your normal Codex login; add accounts only if you want quick
             switching in Orca.
           </p>
-          {activeWslDistro ? (
-            <p className="text-xs text-muted-foreground">
-              WSL terminals use the Codex login inside {activeWslDistro}. Managed Codex account
-              switching applies to host terminals.
-            </p>
-          ) : null}
           <p className="text-xs text-muted-foreground">
             Each account keeps its own local sign-in context in Orca. Account auth stays on this
             device.
@@ -460,18 +482,70 @@ export function AccountsPane({ settings, updateSettings }: AccountsPaneProps): R
             <div className="space-y-0.5">
               <Label>Accounts</Label>
               <p className="text-xs text-muted-foreground">
-                {activeWslDistro
-                  ? `Use codex login in ${activeWslDistro} to change the WSL Codex account.`
-                  : 'Add a Codex account to use it in Orca.'}
+                Add a Codex account to use it in Orca.
               </p>
             </div>
+            {wslCapabilitiesLoading || wslAvailable ? (
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">Account location</Label>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  value={codexAddTarget}
+                  onValueChange={(value) => {
+                    if (value === 'host' || value === 'wsl') {
+                      setCodexAddTarget(value)
+                    }
+                  }}
+                  className="shrink-0"
+                >
+                  <ToggleGroupItem value="host" className="h-7 px-2.5 text-xs">
+                    Windows
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="wsl" className="h-7 px-2.5 text-xs">
+                    WSL
+                  </ToggleGroupItem>
+                </ToggleGroup>
+                {codexAddTarget === 'wsl' ? (
+                  <Select
+                    value={selectedWslDistro ?? ''}
+                    onValueChange={setCodexAddWslDistro}
+                    disabled={wslCapabilitiesLoading || wslDistros.length === 0}
+                  >
+                    <SelectTrigger size="sm" className="h-7 min-w-32 text-xs">
+                      <SelectValue
+                        placeholder={wslCapabilitiesLoading ? 'Loading WSL' : 'Default WSL'}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {wslDistros.map((distro) => (
+                        <SelectItem key={distro} value={distro} className="text-xs">
+                          {distro}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : null}
+              </div>
+            ) : null}
             <Button
               variant="outline"
               size="xs"
               onClick={() =>
-                void runCodexAccountAction('adding', () => window.api.codexAccounts.add())
+                void runCodexAccountAction('adding', () =>
+                  window.api.codexAccounts.add({
+                    runtime: wslAvailable && codexAddTarget === 'wsl' ? 'wsl' : 'host',
+                    wslDistro:
+                      wslAvailable && codexAddTarget === 'wsl' ? selectedWslDistro : undefined
+                  })
+                )
               }
-              disabled={codexAction !== 'idle'}
+              disabled={
+                codexAction !== 'idle' ||
+                wslCapabilitiesLoading ||
+                (codexAddTarget === 'wsl' && (!wslAvailable || wslDistros.length === 0))
+              }
               className="gap-1.5"
             >
               {codexAction === 'adding' ? (
@@ -485,9 +559,8 @@ export function AccountsPane({ settings, updateSettings }: AccountsPaneProps): R
 
           {codexAccounts.accounts.length === 0 ? (
             <div className="rounded-md border border-dashed border-border/70 px-3 py-4 text-xs text-muted-foreground">
-              {activeWslDistro
-                ? `No managed host Codex accounts yet. WSL terminals will use the Codex login in ${activeWslDistro}.`
-                : 'No managed Codex accounts yet. Orca will use your system default Codex login until you add one here.'}
+              No managed Codex accounts yet. Orca will use your system default Codex login until you
+              add one here.
             </div>
           ) : (
             <div className="space-y-2">
@@ -550,6 +623,12 @@ export function AccountsPane({ settings, updateSettings }: AccountsPaneProps): R
                       >
                         <div className="flex min-w-0 items-center gap-2">
                           <span className="truncate text-sm font-medium">{account.email}</span>
+                          <Badge
+                            variant="outline"
+                            className="h-4 shrink-0 rounded px-1.5 text-[10px] font-medium leading-none text-foreground/70"
+                          >
+                            {getCodexAccountRuntimeLabel(account)}
+                          </Badge>
                           {isActive ? (
                             <Badge
                               variant="outline"

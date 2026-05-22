@@ -419,9 +419,16 @@ export type RefreshAgentsResult = {
 }
 
 export type PreflightApi = {
-  check: (args?: { force?: boolean; wslDistro?: string | null }) => Promise<PreflightStatus>
-  detectAgents: (args?: { wslDistro?: string | null }) => Promise<string[]>
-  refreshAgents: (args?: { wslDistro?: string | null }) => Promise<RefreshAgentsResult>
+  check: (args?: {
+    force?: boolean
+    wslDistro?: string | null
+    wslDefault?: boolean
+  }) => Promise<PreflightStatus>
+  detectAgents: (args?: { wslDistro?: string | null; wslDefault?: boolean }) => Promise<string[]>
+  refreshAgents: (args?: {
+    wslDistro?: string | null
+    wslDefault?: boolean
+  }) => Promise<RefreshAgentsResult>
   detectRemoteAgents: (args: { connectionId: string }) => Promise<string[]>
 }
 
@@ -1282,7 +1289,10 @@ export type PreloadApi = {
   }
   codexAccounts: {
     list: () => Promise<CodexRateLimitAccountsState>
-    add: () => Promise<CodexRateLimitAccountsState>
+    add: (args?: {
+      runtime?: 'host' | 'wsl'
+      wslDistro?: string | null
+    }) => Promise<CodexRateLimitAccountsState>
     reauthenticate: (args: { accountId: string }) => Promise<CodexRateLimitAccountsState>
     remove: (args: { accountId: string }) => Promise<CodexRateLimitAccountsState>
     select: (args: { accountId: string | null }) => Promise<CodexRateLimitAccountsState>
@@ -2049,6 +2059,7 @@ export type PreloadApi = {
   }
   wsl: {
     isAvailable: () => Promise<boolean>
+    listDistros: () => Promise<string[]>
   }
   pwsh: {
     isAvailable: () => Promise<boolean>

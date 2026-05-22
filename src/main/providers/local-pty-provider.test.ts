@@ -199,6 +199,71 @@ describe('LocalPtyProvider', () => {
       expect(spawnCall[2].env.CODEX_HOME).toBe('/home/jin/.codex-alt')
     })
 
+    it('translates a WSL managed Codex home before launching a WSL terminal', async () => {
+      Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+      provider.configure({
+        buildSpawnEnv: (_id, env) => {
+          env.CODEX_HOME =
+            '\\\\wsl.localhost\\Ubuntu\\home\\jin\\.local\\share\\orca\\codex-accounts\\a\\home'
+          return env
+        }
+      })
+
+      await provider.spawn({
+        cols: 80,
+        rows: 24,
+        cwd: '\\\\wsl.localhost\\Ubuntu\\home\\jin\\repo'
+      })
+
+      const spawnCall = spawnMock.mock.calls.at(-1)!
+      expect(spawnCall[0]).toBe('wsl.exe')
+      expect(spawnCall[2].env.CODEX_HOME).toBe('/home/jin/.local/share/orca/codex-accounts/a/home')
+    })
+
+    it('does not pass a WSL managed Codex home into a different WSL distro', async () => {
+      Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+      provider.configure({
+        buildSpawnEnv: (_id, env) => {
+          env.CODEX_HOME =
+            '\\\\wsl.localhost\\Ubuntu\\home\\jin\\.local\\share\\orca\\codex-accounts\\a\\home'
+          return env
+        }
+      })
+
+      await provider.spawn({
+        cols: 80,
+        rows: 24,
+        cwd: '\\\\wsl.localhost\\Debian\\home\\jin\\repo'
+      })
+
+      const spawnCall = spawnMock.mock.calls.at(-1)!
+      expect(spawnCall[0]).toBe('wsl.exe')
+      expect(spawnCall[2].env.CODEX_HOME).toBeUndefined()
+    })
+
+    it('uses the preferred WSL distro for Windows cwd WSL terminals', async () => {
+      Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+
+      await provider.spawn({
+        cols: 80,
+        rows: 24,
+        cwd: 'C:\\Users\\jin\\repo',
+        shellOverride: 'wsl.exe',
+        terminalWindowsWslDistro: 'Debian'
+      })
+
+      const spawnCall = spawnMock.mock.calls.at(-1)!
+      expect(spawnCall[0]).toBe('wsl.exe')
+      expect(spawnCall[1]).toEqual([
+        '-d',
+        'Debian',
+        '--',
+        'bash',
+        '-c',
+        "cd '/mnt/c/Users/jin/repo' && exec bash -l"
+      ])
+    })
+
     it('does not inherit parent Orca pane identity when caller omits pane env', async () => {
       const saved = {
         ORCA_PANE_KEY: process.env.ORCA_PANE_KEY,
