@@ -47,15 +47,15 @@
           pango
           stdenv.cc.cc.lib
           udev
-          xorg.libX11
-          xorg.libxcb
-          xorg.libXcomposite
-          xorg.libXdamage
-          xorg.libXext
-          xorg.libXfixes
-          xorg.libXrandr
-          xorg.libXScrnSaver
-          xorg.libXtst
+          libx11
+          libxcb
+          libxcomposite
+          libxdamage
+          libxext
+          libxfixes
+          libxrandr
+          libxscrnsaver
+          libxtst
         ];
 
         # Why: node-gyp builds for better-sqlite3, node-pty, cpu-features need
