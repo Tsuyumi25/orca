@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
   chmodSync
 } from 'node:fs'
@@ -114,6 +116,26 @@ describe('writeHooksJson', () => {
     // configPath should hold v3
     const current = JSON.parse(readFileSync(configPath, 'utf-8'))
     expect(current).toEqual(v3)
+  })
+
+  it.skipIf(process.platform === 'win32')('skips write when configPath is a symbolic link', () => {
+    // Why: declarative environments (e.g. home-manager) provision
+    // ~/.claude/settings.json as a read-only symlink to /nix/store/...; the
+    // atomic renameSync would replace the symlink itself, breaking the next
+    // activation. The skip path lets upstream tooling own the file.
+    const targetPath = join(tmpDir, 'managed-settings.json')
+    const initialContent = '{\n  "hooks": {}\n}\n'
+    writeFileSync(targetPath, initialContent, 'utf-8')
+    symlinkSync(targetPath, configPath)
+
+    writeHooksJson(configPath, {
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: 'should-not-write' }] }] }
+    })
+
+    expect(lstatSync(configPath).isSymbolicLink()).toBe(true)
+    expect(readFileSync(targetPath, 'utf-8')).toBe(initialContent)
+    expect(existsSync(`${configPath}.bak`)).toBe(false)
+    expect(readdirSync(tmpDir).filter((e) => e.endsWith('.tmp'))).toHaveLength(0)
   })
 
   it('leaves no temp file behind if the rename fails', () => {

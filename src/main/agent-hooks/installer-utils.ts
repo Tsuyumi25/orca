@@ -1,5 +1,6 @@
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   writeFileSync,
@@ -339,6 +340,19 @@ function writeScriptWithAclRetry(scriptPath: string, content: string): void {
 export function writeHooksJson(configPath: string, config: HooksConfig): void {
   const dir = dirname(configPath)
   mkdirSync(dir, { recursive: true })
+
+  // Why: when configPath is a symlink, the atomic renameSync below would
+  // replace the symlink itself with a regular file rather than write through
+  // to the target. On systems that provision ~/.claude/settings.json
+  // declaratively (e.g. home-manager → /nix/store/...), that breaks the next
+  // config-system activation. Treat symlinks as externally managed and let
+  // upstream tooling own the file content.
+  if (existsSync(configPath) && lstatSync(configPath).isSymbolicLink()) {
+    console.log(
+      `[hooks-installer][SYMLINK-SKIP] ${configPath} is a symbolic link; assuming externally provisioned, skipping atomic write`
+    )
+    return
+  }
 
   // Why: write to a temp file then rename so a crash or disk-full mid-write
   // leaves the original untouched. This is the only safe way to update a
