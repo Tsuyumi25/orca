@@ -15,7 +15,16 @@
       nixpkgs,
       flake-utils,
     }:
-    flake-utils.lib.eachDefaultSystem (
+    # Why: overlays.default is a top-level (non-per-system) output — it
+    # tells consuming nixpkgs how to expose orca-ai under its usual attr name.
+    # The per-system outputs (devShells/packages) are merged in via the
+    # flake-utils helper below.
+    {
+      overlays.default = final: prev: {
+        orca-ai = self.packages.${final.system}.default;
+      };
+    }
+    // flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs { inherit system; };
