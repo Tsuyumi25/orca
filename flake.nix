@@ -301,7 +301,7 @@
                 "Utility"
               ];
               startupNotify = true;
-              startupWMClass = "orca-ide";
+              startupWMClass = "orca";
             })
           ];
 
