@@ -270,6 +270,34 @@ describe('installNativeDeps (via deployAndLaunchRelay)', () => {
     expect(writeObservedAt).toBeLessThanOrEqual(npmInstallIdx)
   })
 
+  it('wraps the Linux npm install in nix-shell, guarded on /etc/NIXOS', async () => {
+    // Why: node-pty's gyp fallback needs gcc/gnumake/python3, which NixOS user
+    // sessions don't carry on PATH. The remote-side `if [ -e /etc/NIXOS ]`
+    // guard activates the nix-shell wrap only there; non-NixOS hosts (macOS,
+    // vanilla Linux) must keep running the bare command so we don't impose a
+    // nix dependency. The guard is resolved on the remote shell, not locally.
+    const conn = makeMockConnection(sftpCapture)
+    feed(makeExecResponses({ npmInstall: 'ok', probe: 'ok' }))
+
+    await deployAndLaunchRelay(conn)
+
+    const execCalls = vi.mocked(execCommand).mock.calls.map(([, c]) => c)
+    const installCmd = execCalls.find(
+      (c) => c.includes('npm install') && c.includes('node-pty') && c.includes('@parcel/watcher')
+    )
+    expect(installCmd, 'install command must be present').toBeTruthy()
+    // Detection guard runs on the remote, not on the local Orca host.
+    expect(installCmd).toContain('[ -e /etc/NIXOS ]')
+    // NixOS branch wraps npm install in nix-shell -p with the compile
+    // toolchain plus python3 (node-gyp's spawn target).
+    expect(installCmd).toContain('nix-shell -p gcc gnumake python3 --run')
+    // Else branch must still carry a bare npm install — losing it would
+    // silently break every non-NixOS remote.
+    const segments = (installCmd as string).split('nix-shell -p gcc gnumake python3 --run')
+    expect(segments.length).toBe(2)
+    expect(segments[1]).toContain('npm install')
+  })
+
   it('propagates a hard `npm install` failure so the deploy aborts before finalizeInstall', async () => {
     const conn = makeMockConnection(sftpCapture)
     feed(

@@ -537,6 +537,20 @@ async function installNativeDeps(
     const installArgs = Object.entries(RELAY_NATIVE_DEPS)
       .map(([dep, version]) => shellEscape(`${dep}@${version}`))
       .join(' ')
+    // Why: when node-pty's prebuild is missing for this remote's platform/Node
+    // version, npm falls back to `node-gyp rebuild`, which needs gcc/gnumake/
+    // python3 on PATH. NixOS user sessions don't carry those by default (FHS
+    // violation), so the gyp fallback dies there. The standard remedy is to
+    // wrap the command in `nix-shell -p ...`. Detect NixOS via /etc/NIXOS
+    // (cheap, reliable) and wrap only there; every other Linux host runs the
+    // bare command unchanged. The catch-side probeBuildToolchain below only
+    // turns the failure into a nicer error — on NixOS "install gcc/make" is
+    // wrong advice, so this auto-wrap is what actually makes the install work.
+    const linuxNpmInstall = `npm install --omit=dev --no-audit --no-fund ${installArgs} 2>&1`
+    const linuxInstallCommand =
+      `if [ -e /etc/NIXOS ]; then ` +
+      `nix-shell -p gcc gnumake python3 --run "${linuxNpmInstall}"; ` +
+      `else ${linuxNpmInstall}; fi`
     const command = isWindowsRemoteHost(hostPlatform)
       ? commandWithNodePath(
           hostPlatform,
@@ -546,12 +560,7 @@ async function installNativeDeps(
             .map(([dep, version]) => powerShellLiteral(`${dep}@${version}`))
             .join(' ')}`
         )
-      : commandWithNodePath(
-          hostPlatform,
-          nodePath,
-          remoteDir,
-          `npm install --omit=dev --no-audit --no-fund ${installArgs} 2>&1`
-        )
+      : commandWithNodePath(hostPlatform, nodePath, remoteDir, linuxInstallCommand)
     await execHostCommand(conn, hostPlatform, command, {
       timeoutMs: NATIVE_DEPS_INSTALL_TIMEOUT_MS
     })
